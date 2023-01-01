@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 const int WINDOW_WIDTH = 340;
 const int WINDOW_HEIGHT = 680;
@@ -39,6 +40,10 @@ SDL_Renderer *gRenderer = nullptr;
 TTF_Font *gFont = nullptr;
 unsigned char *pField = nullptr;
 std::string tetromino[7];
+enum pFieldEnum {
+    EMPTY, BLOCK, BOUNDARY, LINE_TO_REMOVE
+};
+const std::string pFieldChars = " X#=";
 
 LTexture::LTexture() {
     mTexture = nullptr;
@@ -165,7 +170,7 @@ void drawFieldToScreen(char *screen, int screenWidth, int screenHeight) {
                 screen[y * screenWidth + x] = '\n';
             } else {
                 // draw the screen character based on the corresponding value in pField
-                screen[y * screenWidth + x] = " X#"[pField[y * FIELD_WIDTH + x]];
+                screen[y * screenWidth + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
             }
         }
     }
@@ -175,7 +180,7 @@ void drawFieldToScreen(char *screen, int screenWidth, int screenHeight) {
 void initPlayingField() {
     for (int y = 0; y < FIELD_HEIGHT; y++) {
         for (int x = 0; x < FIELD_WIDTH; x++) {
-            pField[y * FIELD_WIDTH + x] = (x == 0 || x == FIELD_WIDTH - 1 || y == FIELD_HEIGHT - 1) ? 2 : 0;
+            pField[y * FIELD_WIDTH + x] = (x == 0 || x == FIELD_WIDTH - 1 || y == FIELD_HEIGHT - 1) ? BOUNDARY : EMPTY;
         }
     }
 }
@@ -272,7 +277,7 @@ int main(int argc, char *args[]) {
     bool quit = false;
     int tickCounter = 0;
     int nTicksToMoveDown = 10;
-    bool movePieceDown = false;
+    bool movePieceDown;
     const int millisecondsPerTick = 50;
 
     SDL_Event e;
@@ -295,19 +300,18 @@ int main(int argc, char *args[]) {
             if (e.type == SDL_QUIT) {
                 quit = true;
             } else if (e.type == SDL_KEYDOWN) {
-                //Select surfaces based on key press
                 switch (e.key.keysym.sym) {
                     case SDLK_RIGHT:
-                        newXPos++;
+                        newXPos = currXPos + 1;
                         break;
                     case SDLK_LEFT:
-                        newXPos--;
+                        newXPos = currXPos - 1;
                         break;
                     case SDLK_DOWN:
-                        newYPos++;
+                        newYPos = currYPos + 1;
                         break;
                     case SDLK_z:
-                        newRotation++;
+                        newRotation = currRotation + 1;
                         break;
                 }
             }
@@ -315,29 +319,27 @@ int main(int argc, char *args[]) {
 
         // 3. GAME LOGIC
 
-        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
-            currXPos = newXPos;
-            currYPos = newYPos;
-            currRotation = newRotation;
-        }
         if (movePieceDown) {
-            newYPos++;
+            // only move in one direction at a time.
+            newYPos = currYPos + 1;
+            newXPos = currXPos;
+            std::cout << "newYPos (movePieceDown): " << newYPos << std::endl;
             if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
                 currYPos = newYPos;
             } else {
                 // Lock the current piece
+                std::cout << "locking the piece" << std::endl;
                 for (int y = 0; y < 4; y++) {
                     for (int x = 0; x < 4; x++) {
                         char pieceVal = tetromino[currPiece][Rotate(x, y, currRotation)];
                         if (pieceVal != '.') {
-                            pField[(currYPos + y) * FIELD_WIDTH + currXPos + x] = 1;
+                            pField[(currYPos + y) * FIELD_WIDTH + currXPos + x] = BLOCK;
                         }
                     }
                 }
 
                 // check for horizontal lines, and remove those lines
-                bool lineFound[4];
-                // start removing the lines from top to down match, by shifting all the lines lines above the match one line down
+                std::vector<int> lineFoundAt;
                 for (int y = 0; y < 4; y++) {
                     if (y + currYPos < FIELD_HEIGHT - 1) {
                         bool isThisLine = true;
@@ -347,23 +349,28 @@ int main(int argc, char *args[]) {
                                 break;
                             }
                         }
-                        lineFound[y] = isThisLine;
-                    }
-
-
-                }
-                for (int y = 0; y < 4; y++) {
-                    if (lineFound[y]) {
-                        std::cout << "Line Found at y position " << currYPos + y << std::endl;
-                        for(int fY = y + currYPos; fY >= 2; fY--){
-                            for (int fX = FIELD_WIDTH - 1; fX >= 0; fX--) {
-                                int valToOverWrite = pField[(fY - 1) * (FIELD_WIDTH) + fX];
-                                pField[(fY) * (FIELD_WIDTH) + fX] = valToOverWrite;
+                        if (isThisLine) {
+                            lineFoundAt.push_back(y + currYPos);
+                            // update the field to show the visual of matched line
+                            for (int x = 1; x < FIELD_WIDTH - 1; x++) {
+                                pField[(y + currYPos) * FIELD_WIDTH + x] = LINE_TO_REMOVE;
                             }
                         }
-
                     }
                 }
+                if (!lineFoundAt.empty()) {
+                    for (int yToRemove: lineFoundAt) {
+                        for (int fY = yToRemove; fY > 1; fY--) {
+                            for (int fX = FIELD_WIDTH - 1; fX >= 0; fX--) {
+                                pField[(fY) * (FIELD_WIDTH) + fX] = pField[(fY - 1) * (FIELD_WIDTH) + fX];
+                            }
+                        }
+                    }
+                }
+
+                // start removing the lines from top to down match,
+                // by shifting down all the lines above it
+
 
                 // choose next piece
                 currXPos = FIELD_WIDTH / 2;
@@ -376,7 +383,19 @@ int main(int argc, char *args[]) {
 
             }
 
+        } else {
+            // only move in one direction at a time
+            if (newYPos != currYPos) {
+                newXPos = currXPos;
+            }
+            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
+                currXPos = newXPos;
+                currYPos = newYPos;
+                currRotation = newRotation;
+            }
         }
+
+
 
         // 4. RENDER OUTPUT
         // draw field to screen
