@@ -40,6 +40,8 @@ SDL_Renderer *gRenderer = nullptr;
 TTF_Font *gFont = nullptr;
 unsigned char *pField = nullptr;
 std::string tetromino[7];
+int score = 0;
+
 enum pFieldEnum {
     EMPTY, BLOCK, BOUNDARY, LINE_TO_REMOVE
 };
@@ -197,18 +199,18 @@ int Rotate(int px, int py, int r) {
 }
 
 
-bool drawFieldAndCurrPeiceToScreen(char *screen, int screenWidth, int screenHeight, int currPiece, int currXPos, int currYPos, int currRotation) {
-    for (int y = 0; y < screenHeight; y++) {
-        for (int x = 0; x < screenWidth; x++) {
-            if (x == screenWidth - 1) {
-                screen[y * screenWidth + x] = '\n';
+bool drawFieldAndCurrPeiceToScreen(char *screen, int currPiece, int currXPos, int currYPos, int currRotation) {
+    for (int y = 0; y < FIELD_HEIGHT; y++) {
+        for (int x = 0; x < (FIELD_WIDTH+1); x++) {
+            if (x == FIELD_WIDTH) {
+                screen[y * (FIELD_WIDTH+1) + x] = '\n';
             } else {
                 // draw the screen character based on the corresponding value in pField
-                screen[y * screenWidth + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
+                screen[y * (FIELD_WIDTH+1) + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
             }
         }
     }
-    screen[(screenHeight - 1) * screenWidth + screenWidth] = '\0';
+    screen[(FIELD_HEIGHT - 1) * (FIELD_WIDTH+1) + (FIELD_WIDTH+1)] = '\0';
 
     // additionally, draw the current piece to screen
     for (int y = 0; y < 4; y++) {
@@ -216,9 +218,14 @@ bool drawFieldAndCurrPeiceToScreen(char *screen, int screenWidth, int screenHeig
             //draw if rotated block position is not empty
             char pieceCellValue = tetromino[currPiece][Rotate(x, y, currRotation)];
             if (pieceCellValue != '.') {
-                screen[(screenWidth) * (y + currYPos) + currXPos + x] = pieceCellValue;
+                screen[((FIELD_WIDTH+1)) * (y + currYPos) + currXPos + x] = pieceCellValue;
             }
         }
+    }
+    // draw score to the last line in the screen
+    std::string score_chars = "score = " + std::to_string(score);
+    for(int i=0; i< score_chars.size(); i++){
+        screen[FIELD_HEIGHT*(FIELD_WIDTH+1) + i] = score_chars[i];
     }
 
     if (!loadText(screen)) {
@@ -259,10 +266,12 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY) {
 }
 
 int main(int argc, char *args[]) {
+    // pField holds the values of the cells in the playing field
     pField = new unsigned char[FIELD_WIDTH * FIELD_HEIGHT];
-    int screenWidth = FIELD_WIDTH + 1; //add 1 to FIELD_WIDTH for new line
-    int screenHeight = FIELD_HEIGHT;
-    char *screen = new char[screenWidth * screenHeight + 1]; // add 1 for null termination
+    // screen is the text array we draw on screen using pField
+    // add 1 to FIELD_WIDTH for new line
+    // add 1 to FIELD_HEIGHT for score
+    char *screen = new char[(FIELD_WIDTH + 1) * (FIELD_HEIGHT + 1) + 1];
 
     initPlayingField();
 
@@ -356,6 +365,7 @@ int main(int argc, char *args[]) {
                         }
                     }
                 }
+                score += 3;
 
                 // check for horizontal lines, and remove those lines
 
@@ -404,7 +414,7 @@ int main(int argc, char *args[]) {
 
         // 4. RENDER OUTPUT
         // draw field to screen
-        if(!drawFieldAndCurrPeiceToScreen(screen, screenWidth, screenHeight, currPiece, currXPos, currYPos, currRotation)){
+        if(!drawFieldAndCurrPeiceToScreen(screen, currPiece, currXPos, currYPos, currRotation)){
             quit = true;
         }
 
@@ -418,12 +428,13 @@ int main(int argc, char *args[]) {
                     }
                 }
             }
+            score += (1 << lineFoundAt.size()) * 10;
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if(!drawFieldAndCurrPeiceToScreen(screen, screenWidth, screenHeight, currPiece, currXPos, currYPos, currRotation)){
+            if(!drawFieldAndCurrPeiceToScreen(screen, currPiece, currXPos, currYPos, currRotation)){
                 quit = true;
             }
-
         }
+
 
 
     }
