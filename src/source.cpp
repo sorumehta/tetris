@@ -163,20 +163,6 @@ void close() {
 
 }
 
-void drawFieldToScreen(char *screen, int screenWidth, int screenHeight) {
-    for (int y = 0; y < screenHeight; y++) {
-        for (int x = 0; x < screenWidth; x++) {
-            if (x == screenWidth - 1) {
-                screen[y * screenWidth + x] = '\n';
-            } else {
-                // draw the screen character based on the corresponding value in pField
-                screen[y * screenWidth + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
-            }
-        }
-    }
-    screen[(screenHeight - 1) * screenWidth + screenWidth] = '\0';
-}
-
 void initPlayingField() {
     for (int y = 0; y < FIELD_HEIGHT; y++) {
         for (int x = 0; x < FIELD_WIDTH; x++) {
@@ -218,6 +204,50 @@ void _printTetro(char *tetro) {
         std::cout << std::endl;
     }
 }
+
+
+bool drawFieldAndCurrPeiceToScreen(char *screen, int screenWidth, int screenHeight, int currPiece, int currXPos, int currYPos, int currRotation) {
+    for (int y = 0; y < screenHeight; y++) {
+        for (int x = 0; x < screenWidth; x++) {
+            if (x == screenWidth - 1) {
+                screen[y * screenWidth + x] = '\n';
+            } else {
+                // draw the screen character based on the corresponding value in pField
+                screen[y * screenWidth + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
+            }
+        }
+    }
+    screen[(screenHeight - 1) * screenWidth + screenWidth] = '\0';
+
+    // additionally, draw the current piece to screen
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            //draw if rotated block position is not empty
+            char pieceCellValue = tetromino[currPiece][Rotate(x, y, currRotation)];
+            if (pieceCellValue != '.') {
+                screen[(screenWidth) * (y + currYPos) + currXPos + x] = pieceCellValue;
+            }
+        }
+    }
+
+    if (!loadText(screen)) {
+        std::cout << "error while loading texture from text" << std::endl;
+        return false;
+    }
+
+    //clear screen
+    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(gRenderer);
+
+    //render current frame
+    gTextTexture.render((WINDOW_WIDTH - gTextTexture.getWidth()) / 2,
+                        (WINDOW_HEIGHT - gTextTexture.getHeight()) / 2);
+    //update screen
+    SDL_RenderPresent(gRenderer);
+    return true;
+
+}
+
 
 bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY) {
     for (int y = 0; y < 4; y++) {
@@ -318,7 +348,7 @@ int main(int argc, char *args[]) {
         }
 
         // 3. GAME LOGIC
-
+        std::vector<int> lineFoundAt;
         if (movePieceDown) {
             // only move in one direction at a time.
             newYPos = currYPos + 1;
@@ -339,7 +369,7 @@ int main(int argc, char *args[]) {
                 }
 
                 // check for horizontal lines, and remove those lines
-                std::vector<int> lineFoundAt;
+
                 for (int y = 0; y < 4; y++) {
                     if (y + currYPos < FIELD_HEIGHT - 1) {
                         bool isThisLine = true;
@@ -358,19 +388,6 @@ int main(int argc, char *args[]) {
                         }
                     }
                 }
-                if (!lineFoundAt.empty()) {
-                    for (int yToRemove: lineFoundAt) {
-                        for (int fY = yToRemove; fY > 1; fY--) {
-                            for (int fX = FIELD_WIDTH - 1; fX >= 0; fX--) {
-                                pField[(fY) * (FIELD_WIDTH) + fX] = pField[(fY - 1) * (FIELD_WIDTH) + fX];
-                            }
-                        }
-                    }
-                }
-
-                // start removing the lines from top to down match,
-                // by shifting down all the lines above it
-
 
                 // choose next piece
                 currXPos = FIELD_WIDTH / 2;
@@ -396,38 +413,29 @@ int main(int argc, char *args[]) {
         }
 
 
-
         // 4. RENDER OUTPUT
         // draw field to screen
-        drawFieldToScreen(screen, screenWidth, screenHeight);
-
-        // additionally, draw the current piece to screen
-        for (int y = 0; y < 4; y++) {
-            for (int x = 0; x < 4; x++) {
-                //draw if rotated block position is not empty
-                char pieceCellValue = tetromino[currPiece][Rotate(x, y, currRotation)];
-                if (pieceCellValue != '.') {
-                    screen[(screenWidth) * (y + currYPos) + currXPos + x] = pieceCellValue;
-                }
-            }
-        }
-
-        if (!loadText(screen)) {
-            std::cout << "error while loading texture from text" << std::endl;
+        if(!drawFieldAndCurrPeiceToScreen(screen, screenWidth, screenHeight, currPiece, currXPos, currYPos, currRotation)){
             quit = true;
         }
 
+        // remove the lines to remove from top to bottom match,
+        // by shifting down all the lines above it
+        if (!lineFoundAt.empty()) {
+            for (int yToRemove: lineFoundAt) {
+                for (int fY = yToRemove; fY > 1; fY--) {
+                    for (int fX = FIELD_WIDTH - 1; fX >= 0; fX--) {
+                        pField[(fY) * (FIELD_WIDTH) + fX] = pField[(fY - 1) * (FIELD_WIDTH) + fX];
+                    }
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if(!drawFieldAndCurrPeiceToScreen(screen, screenWidth, screenHeight, currPiece, currXPos, currYPos, currRotation)){
+                quit = true;
+            }
 
-        //clear screen
-        SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-        SDL_RenderClear(gRenderer);
+        }
 
-        //render current frame
-        gTextTexture.render((WINDOW_WIDTH - gTextTexture.getWidth()) / 2,
-                            (WINDOW_HEIGHT - gTextTexture.getHeight()) / 2);
-
-        //update screen
-        SDL_RenderPresent(gRenderer);
 
     }
     delete[] pField;
