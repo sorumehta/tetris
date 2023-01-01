@@ -129,7 +129,7 @@ bool sdl_init() {
 }
 
 bool loadFont() {
-    gFont = TTF_OpenFont("res/RobotoMono-Regular.ttf", FONT_SIZE);
+    gFont = TTF_OpenFont("res/unispace-rg.ttf", FONT_SIZE);
     if (gFont == nullptr) {
         std::cout << "Failed to load RobotoMono font! SDL_ttf Error: " << TTF_GetError();
         return false;
@@ -210,7 +210,6 @@ bool drawFieldAndCurrPeiceToScreen(char *screen, int currPiece, int currXPos, in
             }
         }
     }
-    screen[(FIELD_HEIGHT - 1) * (FIELD_WIDTH+1) + (FIELD_WIDTH+1)] = '\0';
 
     // additionally, draw the current piece to screen
     for (int y = 0; y < 4; y++) {
@@ -268,10 +267,11 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY) {
 int main(int argc, char *args[]) {
     // pField holds the values of the cells in the playing field
     pField = new unsigned char[FIELD_WIDTH * FIELD_HEIGHT];
+
     // screen is the text array we draw on screen using pField
     // add 1 to FIELD_WIDTH for new line
-    // add 1 to FIELD_HEIGHT for score
-    char *screen = new char[(FIELD_WIDTH + 1) * (FIELD_HEIGHT + 1) + 1];
+    // add 1 to FIELD_HEIGHT for additional information about the field (like score)
+    char *screen = new char[(FIELD_WIDTH + 1) * (FIELD_HEIGHT + 1)];
 
     initPlayingField();
 
@@ -309,6 +309,7 @@ int main(int argc, char *args[]) {
     int nTicksToMoveDown = 10;
     bool movePieceDown;
     const int millisecondsPerTick = 50;
+    int pieceCount = 0;
 
     SDL_Event e;
     while (!quit) {
@@ -366,6 +367,10 @@ int main(int argc, char *args[]) {
                     }
                 }
                 score += 3;
+                pieceCount++;
+                if(pieceCount % 4 == 0){
+                    nTicksToMoveDown--;
+                }
 
                 // check for horizontal lines, and remove those lines
 
