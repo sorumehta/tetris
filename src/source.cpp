@@ -196,15 +196,6 @@ int Rotate(int px, int py, int r) {
     return pi;
 }
 
-void _printTetro(char *tetro) {
-    for (int y = 0; y < 4; y++) {
-        for (int x = 0; x < 4; x++) {
-            std::cout << tetro[y * 4 + x];
-        }
-        std::cout << std::endl;
-    }
-}
-
 
 bool drawFieldAndCurrPeiceToScreen(char *screen, int screenWidth, int screenHeight, int currPiece, int currXPos, int currYPos, int currRotation) {
     for (int y = 0; y < screenHeight; y++) {
@@ -353,12 +344,10 @@ int main(int argc, char *args[]) {
             // only move in one direction at a time.
             newYPos = currYPos + 1;
             newXPos = currXPos;
-            std::cout << "newYPos (movePieceDown): " << newYPos << std::endl;
             if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
                 currYPos = newYPos;
             } else {
                 // Lock the current piece
-                std::cout << "locking the piece" << std::endl;
                 for (int y = 0; y < 4; y++) {
                     for (int x = 0; x < 4; x++) {
                         char pieceVal = tetromino[currPiece][Rotate(x, y, currRotation)];
