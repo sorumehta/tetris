@@ -6,11 +6,11 @@
 #include <thread>
 #include <vector>
 
-const int WINDOW_WIDTH = 340;
-const int WINDOW_HEIGHT = 680;
+
 const int FONT_SIZE = 24;
-const int FIELD_WIDTH = 12;
-const int FIELD_HEIGHT = 18;
+const int FONT_WIDTH = 17;
+const int FONT_HEIGHT = 34;
+
 
 class LTexture {
 private:
@@ -33,6 +33,15 @@ public:
 
     void free();
 };
+
+typedef struct ConsoleInfo{
+    int windowWidth;
+    int windowHeight;
+    int nCharsX;
+    int nCharsY;
+    char *screenBuffer;
+} ConsoleInfo;
+
 
 LTexture gTextTexture;
 SDL_Window *gWindow = nullptr;
@@ -96,35 +105,37 @@ LTexture::~LTexture() {
     free();
 }
 
-bool sdl_init() {
+ConsoleInfo *constructConsole(int nCharsX, int nCharsY) {
     if (SDL_Init(SDL_INIT_VIDEO)) {
         std::cout << "SDL initialization failed: " << SDL_GetError();
-        return false;
+        return nullptr;
     }
     if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
         std::cout << "Warning: Linear texture filtering not enabled!" << std::endl;
     }
-
+    int windowWidth = nCharsX * FONT_WIDTH + 5;
+    int windowHeight = nCharsY * FONT_HEIGHT + 5;
     gWindow = SDL_CreateWindow("Tetris", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                               WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+                               windowWidth, windowHeight, SDL_WINDOW_SHOWN); // 5 margin
     if (gWindow == nullptr) {
         std::cout << "Window could not be created! SDL Error: " << SDL_GetError();
-        return false;
+        return nullptr;
     }
 
     gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (gRenderer == nullptr) {
         std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError();
-        return false;
+        return nullptr;
     }
     SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
     if (TTF_Init() == -1) {
         std::cout << "SDL_ttf could not initialize! SDL_ttf Error:" << TTF_GetError();
-        return false;
+        return nullptr;
     }
-
-    return true;
+    char *screen = new char[(nCharsX + 1) * (nCharsY)]; // adding one to width for new lines
+    ConsoleInfo *consoleInfo = new ConsoleInfo {windowWidth, windowHeight, nCharsX, nCharsY, screen};
+    return consoleInfo;
 
 }
 
@@ -137,13 +148,28 @@ bool loadFont() {
     return true;
 }
 
-bool loadText(const std::string text) {
+bool renderConsole(ConsoleInfo *console) {
+
+    for(int y=0; y<console->nCharsY; y++){
+        console->screenBuffer[y * (console->nCharsX + 1) + console->nCharsX] = '\n';
+    }
+
     SDL_Color textColor = {0xFF, 0xFF, 0xFF};
-    if (!gTextTexture.loadTextureFromText(text, textColor)) {
+    if (!gTextTexture.loadTextureFromText(console->screenBuffer, textColor)) {
         return false;
     }
+    //clear screen
+    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(gRenderer);
+
+    //render current frame
+    gTextTexture.render((console->windowWidth - gTextTexture.getWidth()) / 2,
+                        (console->windowHeight - gTextTexture.getHeight()) / 2);
+    //update screen
+    SDL_RenderPresent(gRenderer);
     return true;
 }
+
 
 void close() {
     //Free loaded images
@@ -165,10 +191,10 @@ void close() {
 
 }
 
-void initPlayingField() {
-    for (int y = 0; y < FIELD_HEIGHT; y++) {
-        for (int x = 0; x < FIELD_WIDTH; x++) {
-            pField[y * FIELD_WIDTH + x] = (x == 0 || x == FIELD_WIDTH - 1 || y == FIELD_HEIGHT - 1) ? BOUNDARY : EMPTY;
+void initPlayingField(int fieldWidth, int fieldHeight) {
+    for (int y = 0; y < fieldHeight; y++) {
+        for (int x = 0; x < fieldWidth; x++) {
+            pField[y * fieldWidth + x] = (x == 0 || x == fieldWidth - 1 || y == fieldHeight - 1) ? BOUNDARY : EMPTY;
         }
     }
 }
@@ -198,16 +224,17 @@ int Rotate(int px, int py, int r) {
     return pi;
 }
 
+void drawScreen(ConsoleInfo *console, int x, int y, char c){
+    if(x >= 0 && x < console->nCharsX && y>=0 && y < console->nCharsY){
+        console->screenBuffer[y * (console->nCharsX + 1) + x] = c;
+    }
+}
 
-bool drawFieldAndCurrPeiceToScreen(char *screen, int currPiece, int currXPos, int currYPos, int currRotation) {
-    for (int y = 0; y < FIELD_HEIGHT; y++) {
-        for (int x = 0; x < (FIELD_WIDTH+1); x++) {
-            if (x == FIELD_WIDTH) {
-                screen[y * (FIELD_WIDTH+1) + x] = '\n';
-            } else {
-                // draw the screen character based on the corresponding value in pField
-                screen[y * (FIELD_WIDTH+1) + x] = pFieldChars[pField[y * FIELD_WIDTH + x]];
-            }
+bool drawFieldAndCurrPeiceToScreen(ConsoleInfo *console, int currPiece, int currXPos, int currYPos, int currRotation) {
+    for (int y = 0; y < console->nCharsY-1; y++) {
+        for (int x = 0; x < console->nCharsX; x++) {
+            // draw the screen character based on the corresponding value in pField
+            drawScreen(console, x, y,  pFieldChars[pField[y * console->nCharsX + x]]);
         }
     }
 
@@ -217,42 +244,34 @@ bool drawFieldAndCurrPeiceToScreen(char *screen, int currPiece, int currXPos, in
             //draw if rotated block position is not empty
             char pieceCellValue = tetromino[currPiece][Rotate(x, y, currRotation)];
             if (pieceCellValue != '.') {
-                screen[((FIELD_WIDTH+1)) * (y + currYPos) + currXPos + x] = pieceCellValue;
+                drawScreen(console, currXPos + x, y + currYPos, pieceCellValue);
             }
         }
     }
     // draw score to the last line in the screen
     std::string score_chars = "score = " + std::to_string(score);
     for(int i=0; i< score_chars.size(); i++){
-        screen[FIELD_HEIGHT*(FIELD_WIDTH+1) + i] = score_chars[i];
+        drawScreen(console, i, console->nCharsY-1, score_chars[i]);
     }
 
-    if (!loadText(screen)) {
+    if (!renderConsole(console)) {
         std::cout << "error while loading texture from text" << std::endl;
         return false;
     }
 
-    //clear screen
-    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-    SDL_RenderClear(gRenderer);
 
-    //render current frame
-    gTextTexture.render((WINDOW_WIDTH - gTextTexture.getWidth()) / 2,
-                        (WINDOW_HEIGHT - gTextTexture.getHeight()) / 2);
-    //update screen
-    SDL_RenderPresent(gRenderer);
     return true;
 
 }
 
 
-bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY) {
+bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_width, int field_height) {
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
             int tetroIndex = Rotate(x, y, rotation);
-            int fieldIndex = FIELD_WIDTH * (y + posY) + posX + x;
-            if (posX + x >= 0 && posX + x < FIELD_WIDTH) {
-                if (posY + y >= 0 && posY + y < FIELD_HEIGHT) {
+            int fieldIndex = field_width * (y + posY) + posX + x;
+            if (posX + x >= 0 && posX + x < field_width) {
+                if (posY + y >= 0 && posY + y < field_height) {
                     if (tetromino[tetrominoId][tetroIndex] != '.' && pField[fieldIndex] != 0) {
                         return false;
                     }
@@ -266,14 +285,11 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY) {
 
 int main(int argc, char *args[]) {
     // pField holds the values of the cells in the playing field
-    pField = new unsigned char[FIELD_WIDTH * FIELD_HEIGHT];
+    int field_width = 12;
+    int field_height = 18;
+    pField = new unsigned char[field_width * field_height];
 
-    // screen is the text array we draw on screen using pField
-    // add 1 to FIELD_WIDTH for new line
-    // add 1 to FIELD_HEIGHT for additional information about the field (like score)
-    char *screen = new char[(FIELD_WIDTH + 1) * (FIELD_HEIGHT + 1)];
-
-    initPlayingField();
+    initPlayingField(field_width, field_height);
 
 
     tetromino[0] = "..X...X...X...X."; // Tetronimos 4x4
@@ -284,7 +300,8 @@ int main(int argc, char *args[]) {
     tetromino[5] = ".X...X...XX.....";
     tetromino[6] = "..X...X..XX.....";
 
-    if (!sdl_init()) {
+    ConsoleInfo *consoleInfo = constructConsole(field_width, field_height+1); // add one to height for score
+    if (consoleInfo == nullptr) {
         std::cout << "error while initializing" << std::endl;
         close();
         return 0;
@@ -298,7 +315,7 @@ int main(int argc, char *args[]) {
 
     int currPiece = 3;
     int currRotation = 0;
-    int currXPos = FIELD_WIDTH / 2;
+    int currXPos = field_width / 2;
     int currYPos = 0;
     int newXPos;
     int newYPos;
@@ -354,7 +371,7 @@ int main(int argc, char *args[]) {
             // only move in one direction at a time.
             newYPos = currYPos + 1;
             newXPos = currXPos;
-            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
+            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
                 currYPos = newYPos;
             } else {
                 // Lock the current piece
@@ -362,23 +379,23 @@ int main(int argc, char *args[]) {
                     for (int x = 0; x < 4; x++) {
                         char pieceVal = tetromino[currPiece][Rotate(x, y, currRotation)];
                         if (pieceVal != '.') {
-                            pField[(currYPos + y) * FIELD_WIDTH + currXPos + x] = BLOCK;
+                            pField[(currYPos + y) * field_width + currXPos + x] = BLOCK;
                         }
                     }
                 }
                 score += 3;
                 pieceCount++;
-                if(pieceCount % 4 == 0){
+                if(pieceCount % 10 == 0){
                     nTicksToMoveDown--;
                 }
 
                 // check for horizontal lines, and remove those lines
 
                 for (int y = 0; y < 4; y++) {
-                    if (y + currYPos < FIELD_HEIGHT - 1) {
+                    if (y + currYPos < field_height - 1) {
                         bool isThisLine = true;
-                        for (int x = 1; x < FIELD_WIDTH - 1; x++) {
-                            if (pField[(y + currYPos) * FIELD_WIDTH + x] == 0) {
+                        for (int x = 1; x < field_width - 1; x++) {
+                            if (pField[(y + currYPos) * field_width + x] == 0) {
                                 isThisLine = false;
                                 break;
                             }
@@ -386,21 +403,21 @@ int main(int argc, char *args[]) {
                         if (isThisLine) {
                             lineFoundAt.push_back(y + currYPos);
                             // update the field to show the visual of matched line
-                            for (int x = 1; x < FIELD_WIDTH - 1; x++) {
-                                pField[(y + currYPos) * FIELD_WIDTH + x] = LINE_TO_REMOVE;
+                            for (int x = 1; x < field_width - 1; x++) {
+                                pField[(y + currYPos) * field_width + x] = LINE_TO_REMOVE;
                             }
                         }
                     }
                 }
 
                 // choose next piece
-                currXPos = FIELD_WIDTH / 2;
+                currXPos = field_width / 2;
                 currYPos = 0;
                 currRotation = 0;
                 currPiece = rand() % 7;
 
                 // if new piece doesn't fit, game OVER
-                quit = !doesPieceFit(currPiece, newRotation, currXPos, currYPos);
+                quit = !doesPieceFit(currPiece, newRotation, currXPos, currYPos, field_width, field_height);
 
             }
 
@@ -409,17 +426,16 @@ int main(int argc, char *args[]) {
             if (newYPos != currYPos) {
                 newXPos = currXPos;
             }
-            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos)) {
+            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
                 currXPos = newXPos;
                 currYPos = newYPos;
                 currRotation = newRotation;
             }
         }
 
-
         // 4. RENDER OUTPUT
         // draw field to screen
-        if(!drawFieldAndCurrPeiceToScreen(screen, currPiece, currXPos, currYPos, currRotation)){
+        if(!drawFieldAndCurrPeiceToScreen(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
             quit = true;
         }
 
@@ -428,23 +444,20 @@ int main(int argc, char *args[]) {
         if (!lineFoundAt.empty()) {
             for (int yToRemove: lineFoundAt) {
                 for (int fY = yToRemove; fY > 1; fY--) {
-                    for (int fX = FIELD_WIDTH - 1; fX >= 0; fX--) {
-                        pField[(fY) * (FIELD_WIDTH) + fX] = pField[(fY - 1) * (FIELD_WIDTH) + fX];
+                    for (int fX = field_width - 1; fX >= 0; fX--) {
+                        pField[(fY) * (field_width) + fX] = pField[(fY - 1) * (field_width) + fX];
                     }
                 }
             }
             score += (1 << lineFoundAt.size()) * 10;
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if(!drawFieldAndCurrPeiceToScreen(screen, currPiece, currXPos, currYPos, currRotation)){
+            if(!drawFieldAndCurrPeiceToScreen(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
                 quit = true;
             }
         }
-
-
-
     }
+    delete consoleInfo;
     delete[] pField;
-    delete[] screen;
     close();
 
     return 0;
