@@ -5,6 +5,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <functional>
 
 
 const int FONT_SIZE = 24;
@@ -47,14 +48,7 @@ LTexture gTextTexture;
 SDL_Window *gWindow = nullptr;
 SDL_Renderer *gRenderer = nullptr;
 TTF_Font *gFont = nullptr;
-unsigned char *pField = nullptr;
-std::string tetromino[7];
-int score = 0;
 
-enum pFieldEnum {
-    EMPTY, BLOCK, BOUNDARY, LINE_TO_REMOVE
-};
-const std::string pFieldChars = " X#=";
 
 LTexture::LTexture() {
     mTexture = nullptr;
@@ -139,7 +133,7 @@ ConsoleInfo *constructConsole(int nCharsX, int nCharsY) {
 
 }
 
-bool loadFont() {
+bool createResources() {
     gFont = TTF_OpenFont("res/unispace-rg.ttf", FONT_SIZE);
     if (gFont == nullptr) {
         std::cout << "Failed to load RobotoMono font! SDL_ttf Error: " << TTF_GetError();
@@ -170,6 +164,12 @@ bool renderConsole(ConsoleInfo *console) {
     return true;
 }
 
+void drawScreen(ConsoleInfo *console, int x, int y, char c){
+    if(x >= 0 && x < console->nCharsX && y>=0 && y < console->nCharsY){
+        console->screenBuffer[y * (console->nCharsX + 1) + x] = c;
+    }
+}
+
 
 void close() {
     //Free loaded images
@@ -190,6 +190,16 @@ void close() {
     SDL_Quit();
 
 }
+
+// tetris global variables
+unsigned char *pField = nullptr;
+std::string tetromino[7];
+int score = 0;
+
+enum pFieldEnum {
+    EMPTY, BLOCK, BOUNDARY, LINE_TO_REMOVE
+};
+const std::string pFieldChars = " X#="; //characters corresponding to pFieldEnum
 
 void initPlayingField(int fieldWidth, int fieldHeight) {
     for (int y = 0; y < fieldHeight; y++) {
@@ -224,13 +234,25 @@ int Rotate(int px, int py, int r) {
     return pi;
 }
 
-void drawScreen(ConsoleInfo *console, int x, int y, char c){
-    if(x >= 0 && x < console->nCharsX && y>=0 && y < console->nCharsY){
-        console->screenBuffer[y * (console->nCharsX + 1) + x] = c;
-    }
-}
+int field_width = 12;
+int field_height = 18;
+int currPiece = 3;
+int currRotation = 0;
+int currXPos = field_width / 2;
+int currYPos = 0;
+int newXPos;
+int newYPos;
+int newRotation;
 
-bool drawFieldAndCurrPeiceToScreen(ConsoleInfo *console, int currPiece, int currXPos, int currYPos, int currRotation) {
+bool quit = false;
+int tickCounter = 0;
+int nTicksToMoveDown = 10;
+bool movePieceDown;
+const int millisecondsPerTick = 50;
+int pieceCount = 0;
+
+
+bool renderCurrentFrame(ConsoleInfo *console, int currPiece, int currXPos, int currYPos, int currRotation) {
     for (int y = 0; y < console->nCharsY-1; y++) {
         for (int x = 0; x < console->nCharsX; x++) {
             // draw the screen character based on the corresponding value in pField
@@ -272,7 +294,7 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_w
             int fieldIndex = field_width * (y + posY) + posX + x;
             if (posX + x >= 0 && posX + x < field_width) {
                 if (posY + y >= 0 && posY + y < field_height) {
-                    if (tetromino[tetrominoId][tetroIndex] != '.' && pField[fieldIndex] != 0) {
+                    if (tetromino[tetrominoId][tetroIndex] != '.' && pField[fieldIndex] != EMPTY) {
                         return false;
                     }
                 }
@@ -283,10 +305,167 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_w
     return true;
 }
 
+void startGameLoop(const std::function<bool(float, SDL_Event *)>& onStateUpdate, ConsoleInfo *consoleInfo){
+    bool quit = false;
+    if (!createResources()) {
+        std::cout << "error while loading resources" << std::endl;
+        close();
+        quit = true;
+    }
+    auto prevFrameTime = std::chrono::system_clock::now();
+    auto currFrameTime = std::chrono::system_clock::now();
+
+    while(!quit){
+        // handle timing
+        currFrameTime = std::chrono::system_clock::now();
+        std::chrono::duration<float> elapsedTime = currFrameTime - prevFrameTime;
+        prevFrameTime = currFrameTime;
+        float frameElapsedTime = elapsedTime.count();
+
+        //handle input
+        SDL_Event e;
+        SDL_Event *userInput = nullptr;
+        if (SDL_PollEvent(&e) != 0) {
+            //User requests quit
+            if (e.type == SDL_QUIT) {
+                quit = true;
+            } else {
+                userInput = &e;
+            }
+
+        }
+        onStateUpdate(frameElapsedTime, userInput);
+
+
+        // 4. RENDER OUTPUT
+        // draw field to screen
+        if(!renderCurrentFrame(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
+            quit = true;
+        }
+
+    }
+}
+
+bool onNextFrame(float fElapsedTime, SDL_Event *e){
+    newXPos = currXPos;
+    newYPos = currYPos;
+    newRotation = currRotation;
+
+
+    // 1. GAME TIMING
+    std::this_thread::sleep_for(std::chrono::milliseconds(millisecondsPerTick)); // one game tick
+    tickCounter++;
+    movePieceDown = tickCounter % nTicksToMoveDown == 0;
+    std::cout << "movePieceDown = " << movePieceDown << std::endl;
+    tickCounter = (millisecondsPerTick * tickCounter) >= 1000 ? 0 : tickCounter; // reset after one second
+
+    // 2. USER INPUT
+    if (e != nullptr && e->type == SDL_KEYDOWN) {
+        switch (e->key.keysym.sym) {
+            case SDLK_RIGHT:
+                newXPos = currXPos + 1;
+                break;
+            case SDLK_LEFT:
+                newXPos = currXPos - 1;
+                break;
+            case SDLK_DOWN:
+                newYPos = currYPos + 1;
+                break;
+            case SDLK_z:
+                newRotation = currRotation + 1;
+                break;
+        }
+    }
+
+
+    // 3. GAME LOGIC
+    std::vector<int> lineFoundAt;
+    if (movePieceDown) {
+        // only move in one direction at a time.
+        newYPos = currYPos + 1;
+        newXPos = currXPos;
+        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
+            currYPos = newYPos;
+        } else {
+            // Lock the current piece
+            for (int y = 0; y < 4; y++) {
+                for (int x = 0; x < 4; x++) {
+                    char pieceVal = tetromino[currPiece][Rotate(x, y, currRotation)];
+                    if (pieceVal != '.') {
+                        pField[(currYPos + y) * field_width + currXPos + x] = BLOCK;
+                    }
+                }
+            }
+            score += 3;
+            pieceCount++;
+            if(pieceCount % 10 == 0){
+                nTicksToMoveDown--;
+            }
+
+            // check for horizontal lines, and remove those lines
+
+            for (int y = 0; y < 4; y++) {
+                if (y + currYPos < field_height - 1) {
+                    bool isThisLine = true;
+                    for (int x = 1; x < field_width - 1; x++) {
+                        if (pField[(y + currYPos) * field_width + x] == 0) {
+                            isThisLine = false;
+                            break;
+                        }
+                    }
+                    if (isThisLine) {
+                        lineFoundAt.push_back(y + currYPos);
+                        // update the field to show the visual of matched line
+                        for (int x = 1; x < field_width - 1; x++) {
+                            pField[(y + currYPos) * field_width + x] = LINE_TO_REMOVE;
+                        }
+                    }
+                }
+            }
+
+            // choose next piece
+            currXPos = field_width / 2;
+            currYPos = 0;
+            currRotation = 0;
+            currPiece = rand() % 7;
+
+            // if new piece doesn't fit, game OVER
+            quit = !doesPieceFit(currPiece, newRotation, currXPos, currYPos, field_width, field_height);
+
+        }
+
+    } else {
+        // only move in one direction at a time
+        if (newYPos != currYPos) {
+            newXPos = currXPos;
+        }
+        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
+            currXPos = newXPos;
+            currYPos = newYPos;
+            currRotation = newRotation;
+        }
+    }
+
+    // remove the lines to remove from top to bottom match,
+    // by shifting down all the lines above it
+    if (!lineFoundAt.empty()) {
+        for (int yToRemove: lineFoundAt) {
+            for (int fY = yToRemove; fY > 1; fY--) {
+                for (int fX = field_width - 1; fX >= 0; fX--) {
+                    pField[(fY) * (field_width) + fX] = pField[(fY - 1) * (field_width) + fX];
+                }
+            }
+        }
+        score += (1 << lineFoundAt.size()) * 10;
+//        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+//        if(!renderCurrentFrame(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
+//            quit = true;
+//        }
+    }
+}
+
 int main(int argc, char *args[]) {
     // pField holds the values of the cells in the playing field
-    int field_width = 12;
-    int field_height = 18;
     pField = new unsigned char[field_width * field_height];
 
     initPlayingField(field_width, field_height);
@@ -307,155 +486,9 @@ int main(int argc, char *args[]) {
         return 0;
     }
 
-    if (!loadFont()) {
-        std::cout << "error while loading font" << std::endl;
-        close();
-        return 0;
-    }
+    startGameLoop(onNextFrame, consoleInfo);
 
-    int currPiece = 3;
-    int currRotation = 0;
-    int currXPos = field_width / 2;
-    int currYPos = 0;
-    int newXPos;
-    int newYPos;
-    int newRotation;
-
-    bool quit = false;
-    int tickCounter = 0;
-    int nTicksToMoveDown = 10;
-    bool movePieceDown;
-    const int millisecondsPerTick = 50;
-    int pieceCount = 0;
-
-    SDL_Event e;
-    while (!quit) {
-        // 0. INIT
-        newXPos = currXPos;
-        newYPos = currYPos;
-        newRotation = currRotation;
-
-
-        // 1. GAME TIMING
-        std::this_thread::sleep_for(std::chrono::milliseconds(millisecondsPerTick)); // one game tick
-        tickCounter++;
-        movePieceDown = tickCounter % nTicksToMoveDown == 0;
-        tickCounter = (millisecondsPerTick * tickCounter) == 1000 ? 0 : tickCounter; // reset after one second
-
-        // 2. USER INPUT
-        while (SDL_PollEvent(&e) != 0) {
-            //User requests quit
-            if (e.type == SDL_QUIT) {
-                quit = true;
-            } else if (e.type == SDL_KEYDOWN) {
-                switch (e.key.keysym.sym) {
-                    case SDLK_RIGHT:
-                        newXPos = currXPos + 1;
-                        break;
-                    case SDLK_LEFT:
-                        newXPos = currXPos - 1;
-                        break;
-                    case SDLK_DOWN:
-                        newYPos = currYPos + 1;
-                        break;
-                    case SDLK_z:
-                        newRotation = currRotation + 1;
-                        break;
-                }
-            }
-        }
-
-        // 3. GAME LOGIC
-        std::vector<int> lineFoundAt;
-        if (movePieceDown) {
-            // only move in one direction at a time.
-            newYPos = currYPos + 1;
-            newXPos = currXPos;
-            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
-                currYPos = newYPos;
-            } else {
-                // Lock the current piece
-                for (int y = 0; y < 4; y++) {
-                    for (int x = 0; x < 4; x++) {
-                        char pieceVal = tetromino[currPiece][Rotate(x, y, currRotation)];
-                        if (pieceVal != '.') {
-                            pField[(currYPos + y) * field_width + currXPos + x] = BLOCK;
-                        }
-                    }
-                }
-                score += 3;
-                pieceCount++;
-                if(pieceCount % 10 == 0){
-                    nTicksToMoveDown--;
-                }
-
-                // check for horizontal lines, and remove those lines
-
-                for (int y = 0; y < 4; y++) {
-                    if (y + currYPos < field_height - 1) {
-                        bool isThisLine = true;
-                        for (int x = 1; x < field_width - 1; x++) {
-                            if (pField[(y + currYPos) * field_width + x] == 0) {
-                                isThisLine = false;
-                                break;
-                            }
-                        }
-                        if (isThisLine) {
-                            lineFoundAt.push_back(y + currYPos);
-                            // update the field to show the visual of matched line
-                            for (int x = 1; x < field_width - 1; x++) {
-                                pField[(y + currYPos) * field_width + x] = LINE_TO_REMOVE;
-                            }
-                        }
-                    }
-                }
-
-                // choose next piece
-                currXPos = field_width / 2;
-                currYPos = 0;
-                currRotation = 0;
-                currPiece = rand() % 7;
-
-                // if new piece doesn't fit, game OVER
-                quit = !doesPieceFit(currPiece, newRotation, currXPos, currYPos, field_width, field_height);
-
-            }
-
-        } else {
-            // only move in one direction at a time
-            if (newYPos != currYPos) {
-                newXPos = currXPos;
-            }
-            if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
-                currXPos = newXPos;
-                currYPos = newYPos;
-                currRotation = newRotation;
-            }
-        }
-
-        // 4. RENDER OUTPUT
-        // draw field to screen
-        if(!drawFieldAndCurrPeiceToScreen(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
-            quit = true;
-        }
-
-        // remove the lines to remove from top to bottom match,
-        // by shifting down all the lines above it
-        if (!lineFoundAt.empty()) {
-            for (int yToRemove: lineFoundAt) {
-                for (int fY = yToRemove; fY > 1; fY--) {
-                    for (int fX = field_width - 1; fX >= 0; fX--) {
-                        pField[(fY) * (field_width) + fX] = pField[(fY - 1) * (field_width) + fX];
-                    }
-                }
-            }
-            score += (1 << lineFoundAt.size()) * 10;
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if(!drawFieldAndCurrPeiceToScreen(consoleInfo, currPiece, currXPos, currYPos, currRotation)){
-                quit = true;
-            }
-        }
-    }
+    delete[] consoleInfo->screenBuffer;
     delete consoleInfo;
     delete[] pField;
     close();
