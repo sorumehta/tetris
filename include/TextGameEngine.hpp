@@ -189,15 +189,14 @@ void close() {
     SDL_Quit();
 
 }
-
-void startGameLoop(const std::function<void()> onCreate, const std::function<bool(float, SDL_Event *, ConsoleInfo *)>& onStateUpdate, ConsoleInfo *consoleInfo){
+template <typename ... Args>
+void startGameLoop(ConsoleInfo *consoleInfo, bool (*onFrameUpdate)(float, SDL_Event *, ConsoleInfo *, Args... ), Args ... onFrameUpdateArgs){
     bool quit = false;
     if (!createResources()) {
         std::cout << "error while loading resources" << std::endl;
         close();
         quit = true;
     }
-    onCreate();
     auto prevFrameTime = std::chrono::system_clock::now();
     auto currFrameTime = std::chrono::system_clock::now();
 
@@ -220,7 +219,7 @@ void startGameLoop(const std::function<void()> onCreate, const std::function<boo
             }
 
         }
-        onStateUpdate(frameElapsedTime, userInput, consoleInfo);
+        onFrameUpdate(frameElapsedTime, userInput, consoleInfo, onFrameUpdateArgs...);
 
         // 4. RENDER OUTPUT
         

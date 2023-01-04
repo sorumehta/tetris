@@ -6,20 +6,39 @@
 #include <vector>
 #include <functional>
 
+
+typedef struct GameState{
+
+    const int field_width = 12;
+    const int field_height = 18;
+    unsigned char *pField = nullptr;
+    int currPiece = 3;
+    int currRotation = 0;
+    int currXPos = field_width / 2;
+    int currYPos = 0;
+
+    int tickCounter = 0;
+    int nTicksToMoveDown = 10;
+    bool movePieceDown = false;
+    const int millisecondsPerTick = 50;
+    int pieceCount = 0;
+    int score = 0;
+
+} GameState;
+
 // tetris global variables
-unsigned char *pField = nullptr;
 std::string tetromino[7];
-int score = 0;
 
 enum pFieldEnum {
     EMPTY, BLOCK, BOUNDARY, LINE_TO_REMOVE
 };
+
 const std::string pFieldChars = " X#="; //characters corresponding to pFieldEnum
 
-void initPlayingField(int fieldWidth, int fieldHeight) {
-    for (int y = 0; y < fieldHeight; y++) {
-        for (int x = 0; x < fieldWidth; x++) {
-            pField[y * fieldWidth + x] = (x == 0 || x == fieldWidth - 1 || y == fieldHeight - 1) ? BOUNDARY : EMPTY;
+void initPlayingField(GameState state) {
+    for (int y = 0; y < state.field_height; y++) {
+        for (int x = 0; x < state.field_width; x++) {
+            state.pField[y * state.field_width + x] = (x == 0 || x == state.field_width - 1 || y == state.field_height - 1) ? BOUNDARY : EMPTY;
         }
     }
 }
@@ -49,28 +68,12 @@ int Rotate(int px, int py, int r) {
     return pi;
 }
 
-int field_width = 12;
-int field_height = 18;
-int currPiece = 3;
-int currRotation = 0;
-int currXPos = field_width / 2;
-int currYPos = 0;
-int newXPos;
-int newYPos;
-int newRotation;
 
-int tickCounter = 0;
-int nTicksToMoveDown = 10;
-bool movePieceDown;
-const int millisecondsPerTick = 50;
-int pieceCount = 0;
-
-
-bool drawBuffer(ConsoleInfo *console, int currPiece, int currXPos, int currYPos, int currRotation) {
+bool drawBuffer(ConsoleInfo *console, GameState& state) {
     for (int y = 0; y < console->nCharsY-1; y++) {
         for (int x = 0; x < console->nCharsX; x++) {
             // draw the screen character based on the corresponding value in pField
-            drawScreen(console, x, y,  pFieldChars[pField[y * console->nCharsX + x]]);
+            drawScreen(console, x, y,  pFieldChars[state.pField[y * console->nCharsX + x]]);
         }
     }
 
@@ -78,14 +81,14 @@ bool drawBuffer(ConsoleInfo *console, int currPiece, int currXPos, int currYPos,
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
             //draw if rotated block position is not empty
-            char pieceCellValue = tetromino[currPiece][Rotate(x, y, currRotation)];
+            char pieceCellValue = tetromino[state.currPiece][Rotate(x, y, state.currRotation)];
             if (pieceCellValue != '.') {
-                drawScreen(console, currXPos + x, y + currYPos, pieceCellValue);
+                drawScreen(console, state.currXPos + x, y + state.currYPos, pieceCellValue);
             }
         }
     }
     // draw score to the last line in the screen
-    std::string score_chars = "score = " + std::to_string(score);
+    std::string score_chars = "score = " + std::to_string(state.score);
     for(int i=0; i< score_chars.size(); i++){
         drawScreen(console, i, console->nCharsY-1, score_chars[i]);
     }
@@ -95,7 +98,7 @@ bool drawBuffer(ConsoleInfo *console, int currPiece, int currXPos, int currYPos,
 }
 
 
-bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_width, int field_height) {
+bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_width, int field_height, unsigned char *pField) {
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
             int tetroIndex = Rotate(x, y, rotation);
@@ -113,11 +116,11 @@ bool doesPieceFit(int tetrominoId, int rotation, int posX, int posY, int field_w
     return true;
 }
 
-void initState(){
+void initState(GameState& state){
     // pField holds the values of the cells in the playing field
-    pField = new unsigned char[field_width * field_height];
+    state.pField = new unsigned char[state.field_width * state.field_height];
 
-    initPlayingField(field_width, field_height);
+    initPlayingField(state);
 
 
     tetromino[0] = "..X...X...X...X."; // Tetronimos 4x4
@@ -129,10 +132,13 @@ void initState(){
     tetromino[6] = "..X...X..XX.....";
 }
 
-bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console){
-    newXPos = currXPos;
-    newYPos = currYPos;
-    newRotation = currRotation;
+bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console, GameState& gState){
+    auto &[field_width, field_height, pField, currPiece,
+          currRotation,currXPos,currYPos,tickCounter, nTicksToMoveDown,
+          movePieceDown, millisecondsPerTick, pieceCount, score  ] = gState;
+    int newXPos = currXPos;
+    int newYPos = currYPos;
+    int newRotation = currRotation;
 
 
     // 1. GAME TIMING
@@ -166,7 +172,7 @@ bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console){
         // only move in one direction at a time.
         newYPos = currYPos + 1;
         newXPos = currXPos;
-        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
+        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height, pField)) {
             currYPos = newYPos;
         } else {
             // Lock the current piece
@@ -212,7 +218,7 @@ bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console){
             currPiece = rand() % 7;
 
             // if new piece doesn't fit, game OVER
-            if(!doesPieceFit(currPiece, newRotation, currXPos, currYPos, field_width, field_height))
+            if(!doesPieceFit(currPiece, newRotation, currXPos, currYPos, field_width, field_height, pField))
                 return false;
 
         }
@@ -222,7 +228,7 @@ bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console){
         if (newYPos != currYPos) {
             newXPos = currXPos;
         }
-        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height)) {
+        if (doesPieceFit(currPiece, newRotation, newXPos, newYPos, field_width, field_height, pField)) {
             currXPos = newXPos;
             currYPos = newYPos;
             currRotation = newRotation;
@@ -242,27 +248,30 @@ bool onNextFrame(float fElapsedTime, SDL_Event *e, ConsoleInfo *console){
         score += (1 << lineFoundAt.size()) * 10;
     }
     // draw field to screen
-    if(!drawBuffer(console, currPiece, currXPos, currYPos, currRotation)){
+    if(!drawBuffer(console, gState)){
         return false;
     }
     return true;
 }
 
 int main(int argc, char *args[]) {
-
-    ConsoleInfo *consoleInfo = constructConsole(field_width, field_height+1); // add one to height for score
+    GameState state;
+    ConsoleInfo *consoleInfo = constructConsole(state.field_width, state.field_height+1); // add one to height for score
     if (consoleInfo == nullptr) {
         std::cout << "error while initializing" << std::endl;
         close();
         return 0;
     }
 
-    startGameLoop(initState, onNextFrame, consoleInfo);
+    initState(state);
+
+    startGameLoop<GameState&>(consoleInfo, onNextFrame, state);
 
     delete[] consoleInfo->screenBuffer;
     delete consoleInfo;
-    delete[] pField;
+    delete[] state.pField;
     close();
 
     return 0;
 }
+
