@@ -133,7 +133,7 @@ ConsoleInfo *constructConsole(int nCharsX, int nCharsY) {
 }
 
 bool createResources() {
-    gFont = TTF_OpenFont("res/unispace-rg.ttf", FONT_SIZE);
+    gFont = TTF_OpenFont("../res/unispace-rg.ttf", FONT_SIZE);
     if (gFont == nullptr) {
         std::cout << "Failed to load RobotoMono font! SDL_ttf Error: " << TTF_GetError();
         return false;
